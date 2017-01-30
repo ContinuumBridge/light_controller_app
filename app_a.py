@@ -11,11 +11,12 @@ from cbconfig import *
 import time
 from twisted.internet import reactor
 
-ModuleName = "Light Controller"
-CHECK_DELAY = 60   # How often to check the times and switch
-colours = ["soft_white", "cold_white", "red", "green", "blue"]
-ontimes = []
-offtimes = []
+ModuleName          = "Light Controller"
+CHECK_DELAY         = 60   # How often to check the times and switch
+colours             = ["soft_white", "cold_white", "red", "green", "blue"]
+ontimes             = []
+offtimes            = []
+configFile          = CB_CONFIG_DIR + "circadian.json"
 
 class App(CbApp):
     def __init__(self, argv):
@@ -32,19 +33,6 @@ class App(CbApp):
         self.gotSwitch = False
         self.sensorsID = [] 
         self.switchID = ""
-        configFile = CB_CONFIG_DIR + "circadian.json"
-        global ontimes, offtimes
-        try:
-            with open(configFile, 'r') as configFile:
-                config = json.load(configFile)
-                ontimes = config["ontimes"]
-                logging.debug("%s ontimes: %s", ModuleName, ontimes)
-                offtimes = config["offtimes"]
-                logging.debug("%s offtimes: %s", ModuleName, offtimes)
-                logging.info('%s Read circadian.json', ModuleName)
-        except Exception as ex:
-            logging.warning('%s circadian.json does not exist or file is corrupt', ModuleName)
-            logging.warning("%s Exception: %s %s", ModuleName, type(ex), str(ex.args))
         # Super-class init must be called
         CbApp.__init__(self, argv)
 
@@ -55,25 +43,41 @@ class App(CbApp):
                "state": self.state}
         self.sendManagerMessage(msg)
 
+    def readTimings(self):
+        global ontimes, offtimes
+        logging.info("{} Reading times from: {}".format(ModuleName, configFile))
+        try:
+            with open(configFile, 'r') as f:
+                config = json.load(f)
+                ontimes = config["ontimes"]
+                logging.debug("%s ontimes: %s", ModuleName, ontimes)
+                offtimes = config["offtimes"]
+                logging.debug("%s offtimes: %s", ModuleName, offtimes)
+        except Exception as ex:
+            logging.warning('%s circadian.json does not exist or file is corrupt', ModuleName)
+            logging.warning("%s Exception: %s %s", ModuleName, type(ex), str(ex.args))
+
     def doTiming(self):
         if self.gotSwitch:
             now = time.strftime('%a %H:%M', time.localtime())
             for t in ontimes:
                 if t == now:
-                    command = {"id": self.id,
-                               "request": "command",
-                               "data": "on"}
-                    self.sendMessage(command, self.switchID)
-                    logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
-                    self.switchState = "on"
+                    for b in self.brightnesses:
+                        if b == "cold_white":
+                            self.brightnesses[b] = "255"
+                        else:
+                            self.brightnesses[b] = "0"
+                    self.cbLog("debug", "doTiming, sending: {}".format(self.brightnesses))
+                    self.sendCommand(self.brightnesses)
             for t in offtimes:
                 if t == now:
-                    command = {"id": self.id,
-                               "request": "command",
-                               "data": "off"}
-                    self.sendMessage(command, self.switchID)
-                    logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
-                    self.switchState = "off"
+                    for b in self.brightnesses:
+                        if b == "soft_white":
+                            self.brightnesses[b] = "150"
+                        else:
+                            self.brightnesses[b] = "0"
+                    self.cbLog("debug", "doTiming, sending: {}".format(self.brightnesses))
+                    self.sendCommand(self.brightnesses)
         reactor.callLater(CHECK_DELAY, self.doTiming)
 
     def sendServiceResponse(self, characteristic, device):
@@ -143,11 +147,13 @@ class App(CbApp):
                                 self.brightnesses[b] = str(self.brightness)
                             else:
                                 self.brightnesses[b] = "0"
+                        self.cbLog("debug", "onAdaptorData, sending: {}".format(self.brightnesses))
                         self.sendCommand(self.brightnesses)
             else:
                 self.cbLog("debug", "Trying to turn on/off before switch connected")
 
     def onConfigureMessage(self, config):
+        self.readTimings()
         self.doTiming()
         self.setState("starting")
 
