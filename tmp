@@ -22,18 +22,22 @@ class App(CbApp):
         self.appClass = "control"
         self.state = "stopped"
         self.colourIndex = 1
-        self.brightnesses = {"soft_white": "0",
-            "cold_white": "255",
+        self.switchState = {"soft_white": False,
+            "cold_white": True,
+            "red": False,
+            "green": False,
+            "blue": False
+        }
+        self.brightness = {"soft_white": "0",
+            "cold_white": "0",
             "red": "0",
             "green": "0",
             "blue": "0"
         }
-        self.brightness = 255
         self.gotSwitch = False
         self.sensorsID = [] 
         self.switchID = ""
         configFile = CB_CONFIG_DIR + "circadian.json"
-        global ontimes, offtimes
         try:
             with open(configFile, 'r') as configFile:
                 config = json.load(configFile)
@@ -41,7 +45,7 @@ class App(CbApp):
                 logging.debug("%s ontimes: %s", ModuleName, ontimes)
                 offtimes = config["offtimes"]
                 logging.debug("%s offtimes: %s", ModuleName, offtimes)
-                logging.info('%s Read circadian.json', ModuleName)
+                logging.info('%s Read toasty.json', ModuleName)
         except Exception as ex:
             logging.warning('%s circadian.json does not exist or file is corrupt', ModuleName)
             logging.warning("%s Exception: %s %s", ModuleName, type(ex), str(ex.args))
@@ -112,7 +116,7 @@ class App(CbApp):
         self.setState("running")
 
     def onAdaptorData(self, message):
-        #self.cbLog("debug", "onAdaptorData, message: " + str(json.dumps(message, indent=4)))
+        self.cbLog("debug", "onAdaptorData, message: " + str(json.dumps(message, indent=4)))
         if message["id"] in self.sensorsID:
             if self.gotSwitch:
                 if message["characteristic"] == "number_buttons":
@@ -128,22 +132,19 @@ class App(CbApp):
                         if self.brightness < 5:
                             self.brightness = 0
                         change = True
+                    for s in self.switchState:
+                        if self.switchState[s]:
+                            brightness[s] = str(self.brightness)
                     if "2" in data:
                         self.colourIndex = (self.colourIndex + 1)%5
-                        change = True
+                        chang = True
                     elif "4" in data:
                         if self.colourIndex == 0:
                             self.colourIndex = 4
                         else:
                             self.colourIndex = self.colourIndex - 1
-                        change = True
                     if change:
-                        for b in self.brightnesses:
-                            if b == colours[self.colourIndex]:
-                                self.brightnesses[b] = str(self.brightness)
-                            else:
-                                self.brightnesses[b] = "0"
-                        self.sendCommand(self.brightnesses)
+                        self.sendCommand(brightness)
             else:
                 self.cbLog("debug", "Trying to turn on/off before switch connected")
 
